@@ -1,11 +1,11 @@
-# Google's Gemini Bot
+# Market Scout Agent
 
-**Gemini Bot** is a powerful AI assistant powered by **Google's Gemini models**, featuring a **Django** backend and a **Streamlit** frontend. It allows users to converse with a chatbot, analyze images, and chat with PDF documents using RAG (Retrieval-Augmented Generation).
+**Market Scout Agent** is a professional market, product, and competitor intelligence application powered by **Google's Gemini models**, with a **Django** backend and a **Streamlit** frontend.
 
 ## Features
-- **Conversational Chatbot**: Chat with Gemini using custom system prompts.
-- **Image Analysis**: Upload images and ask questions about them using the `gemini-2.5-flash` model.
-- **PDF Chat**: Upload PDFs and ask questions about their content. Uses `text-embedding-004` for embeddings and FAISS for vector search.
+- **Market Intelligence Chat**: Text-based market and competitor analysis.
+- **Visual Competitor Analysis**: Upload images for visual competitor and product insights.
+- **Analyze Market Reports**: Upload PDFs and get structured analysis; uses `text-embedding-004` for embeddings and FAISS for vector search.
 
 ---
 
@@ -85,13 +85,13 @@ The project is divided into two main parts:
 
 ## Usage Guide
 
-1.  **Converse with Chatbot**: Select this option to have a general conversation. You can set a "System Prompt" to define the bot's persona.
-2.  **Image-Bot**: Upload an image (JPG, PNG, WEBP) and ask questions about it.
-3.  **Chat with PDF**: Upload a PDF document. Once uploaded, you can ask specific questions about the content of the PDF.
+1.  **Market Intelligence Chat**: Run text-based market and competitor intelligence queries.
+2.  **Visual Competitor Analysis**: Upload an image (JPG, PNG, WEBP) and request analysis.
+3.  **Analyze Market Reports**: Upload a PDF report; then ask questions or request a summary of the content.
 
 ## Troubleshooting
 
--   **500 Errors / Quota Exceeded**: If you encounter errors related to quotas (especially in PDF Chat), it means the API key has hit the rate limit for the embedding model. Wait a minute and try again.
+-   **500 Errors / Quota Exceeded**: If you encounter errors related to quotas (especially in Analyze Market Reports), the API key may have hit the rate limit. Wait a minute and try again.
 -   **Model Not Found**: Ensure you are using supported models. This project uses `gemini-2.5-flash` and `text-embedding-004`.
 
 ## Technologies Used

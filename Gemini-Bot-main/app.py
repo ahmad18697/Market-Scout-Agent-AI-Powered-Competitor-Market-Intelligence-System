@@ -3,118 +3,177 @@ from PIL import Image
 import requests
 import uuid
 from decouple import config
-import io
 
-API_URL = config("API_URL")
+# ==============================
+# CONFIG
+# ==============================
+API_URL = config("API_URL")  # e.g. http://localhost:8001
 
-st.sidebar.title("Google's Gemini")
-system_prompt = st.sidebar.text_area("System Prompt:", value="You are a helpful AI Assistant.")
-if 'session_id' not in st.session_state:
+st.set_page_config(
+    page_title="Market Scout Agent",
+    page_icon="📊",
+    layout="wide"
+)
+
+# ==============================
+# SESSION INIT
+# ==============================
+if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
-def chatbot(session_id):
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message['content'])
+# ==============================
+# SIDEBAR
+# ==============================
+st.sidebar.title("Market Scout Agent")
+system_prompt = st.sidebar.text_area(
+    "Additional context (optional):",
+    placeholder="Optional notes for this session."
+)
 
-    prompt = st.chat_input("Message Gemini...")
+# ==============================
+# MARKET INTELLIGENCE CHAT
+# ==============================
+def market_chat():
+    st.markdown("## Market Intelligence Chat")
 
-    if not prompt:
-        st.markdown(
-        """
-        <h1 style='font-size: 36px;'>
-            👋 Welcome to Google's Gemini Model 🤖
-        </h1>
-        """,
-        unsafe_allow_html=True
-        )
-        st.markdown("Things you can do with this bot:\n\n1. Converse with chatbot\n2. Ask questions on images\n3. Ask questions on PDFs")
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    prompt = st.chat_input("Enter your market intelligence query...")
 
     if prompt:
         with st.chat_message("user"):
             st.markdown(prompt)
-        
-        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        st.session_state.messages.append(
+            {"role": "user", "content": prompt}
+        )
 
         with st.spinner("Thinking..."):
-            data = {'session_id': st.session_state.session_id, 'system_prompt': system_prompt, 'prompt': prompt}
-            response = requests.post(f"{API_URL}/chat/", data=data)
-            result = response.json()
-            result = result['generated_text']
+            response = requests.post(
+                f"{API_URL}/chat/",
+                data={
+                    "session_id": st.session_state.session_id,
+                    "system_prompt": system_prompt,
+                    "prompt": prompt
+                },
+                timeout=120
+            )
+
+        result = response.json().get("generated_text", "")
 
         with st.chat_message("assistant"):
             st.markdown(result)
 
-        st.session_state.messages.append({"role": "assistant", "content": result})
+        st.session_state.messages.append(
+            {"role": "assistant", "content": result}
+        )
 
-def imagebot(session_id):
-    uploaded_file = st.file_uploader("Please upload an image", type=["jpg", "jpeg", "png", "webp"])
+# ==============================
+# VISUAL COMPETITOR ANALYSIS
+# ==============================
+def image_analysis():
+    st.markdown("## Visual Competitor Analysis")
 
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption='Your uploaded image', width=200)
-        prompt = st.text_input(label="Ask about uploaded image...", key=session_id)
-        if prompt is not None and st.button("Ask"):
+    uploaded_image = st.file_uploader(
+        "Upload an image for analysis",
+        type=["jpg", "jpeg", "png", "webp"]
+    )
+
+    if uploaded_image:
+        image = Image.open(uploaded_image)
+        st.image(image, caption="Uploaded image", width=250)
+
+        prompt = st.text_input(
+            "Enter analysis request (optional)",
+            key="image_prompt"
+        )
+
+        if st.button("Analyze Image"):
             with st.spinner("Thinking..."):
-                data = {'session_id': session_id,
-                        'system_prompt': system_prompt,
-                        'prompt': prompt,
-                        }
-                # Reset file pointer
-                uploaded_file.seek(0)
-                files = {'image': uploaded_file.read()}
-                response = requests.post(f"{API_URL}/image/", data=data, files=files)
+                uploaded_image.seek(0)
+                files = {
+                    "image": uploaded_image.read()
+                }
+
+                response = requests.post(
+                    f"{API_URL}/image/",
+                    data={
+                        "session_id": st.session_state.session_id,
+                        "system_prompt": system_prompt,
+                        "prompt": prompt
+                    },
+                    files=files,
+                    timeout=120
+                )
 
             if response.status_code == 200:
-                result = response.json()
-                result = result['generated_text']
-                st.markdown(result)
+                st.markdown(response.json().get("generated_text", ""))
             else:
-                st.error(f"Failed to send the data. Status code: {response.status_code}")
-                try:
-                    st.error(response.json())
-                except:
-                    st.error(response.text)
+                st.error(f"Error {response.status_code}")
+                st.error(response.text)
 
-def pdfchat(session_id):
-    uploaded_pdf = st.file_uploader("Please upload a PDF", type=["pdf"])
-    if uploaded_pdf is not None:
-        pdf_bytes = uploaded_pdf.read()
-        st.success("PDF Uploaded Succesfully!")
-        prompt = st.text_input(label="Ask about uploaded PDF...", key=session_id)
-        if prompt is not None and st.button("Ask"):
+# ==============================
+# ANALYZE MARKET REPORTS (PDF)
+# ==============================
+def pdf_analysis():
+    st.markdown("## Analyze Market Reports")
+
+    uploaded_pdf = st.file_uploader(
+        "Upload a market report (PDF)",
+        type=["pdf"]
+    )
+
+    if uploaded_pdf:
+        st.success("Report uploaded successfully.")
+
+        prompt = st.text_input(
+            "Enter your analysis request for this report",
+            key="pdf_prompt"
+        )
+
+        if st.button("Analyze PDF"):
             with st.spinner("Thinking..."):
-                files = {"pdf": (uploaded_pdf.name, pdf_bytes, "application/pdf")}
-                data = {"session_id": session_id, "prompt": prompt}
-                response = requests.post(f"{API_URL}/pdf/", data=data, files=files)
+                # 🔥 CRITICAL STREAMLIT FIX
+                uploaded_pdf.seek(0)
+                pdf_bytes = uploaded_pdf.read()
+
+                files = {
+                    "pdf": (
+                        uploaded_pdf.name,
+                        pdf_bytes,
+                        "application/pdf"
+                    )
+                }
+
+                response = requests.post(
+                    f"{API_URL}/pdf/",
+                    data={
+                        "session_id": st.session_state.session_id,
+                        "prompt": prompt
+                    },
+                    files=files,
+                    timeout=120
+                )
 
             if response.status_code == 200:
-                result = response.json()
-                result = result['generated_text']
-                st.markdown(result)
+                st.markdown(response.json().get("generated_text", ""))
             else:
-                st.error("Failed to send the data.")
+                st.error(f"Failed to send the data. Status: {response.status_code}")
+                st.error(response.text)
 
-
-
-def chat():
-    chatbot(st.session_state.session_id)
-
-def image():
-    imagebot(st.session_state.session_id)
-
-def pdf():
-    pdfchat(st.session_state.session_id)
-
+# ==============================
+# NAVIGATION
+# ==============================
 PAGES = {
-    "Converse with Chatbot": chat,
-    "Image-Bot": image,
-    "Chat with PDF": pdf,
+    "Market Intelligence Chat": market_chat,
+    "Visual Competitor Analysis": image_analysis,
+    "Analyze Market Reports": pdf_analysis,
 }
 
 selection = st.sidebar.radio("Navigation", list(PAGES.keys()))
-page = PAGES[selection]
-page()
+PAGES[selection]()
