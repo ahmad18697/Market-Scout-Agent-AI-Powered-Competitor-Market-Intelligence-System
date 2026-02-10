@@ -3,3 +3,9 @@ djangorestframework
 google-genai
 python-decouple
 whitenoise
+Django
+djangorestframework
+google-genai
+python-decouple
+whitenoise
+gunicorn
