@@ -261,7 +261,10 @@ def _build_synthesis_prompt(company_name: str, verified_sources: List[Dict[str, 
     lines.append("You must produce a report using ONLY the VERIFIED SOURCES provided below.")
     lines.append("Do NOT add any facts not grounded in these sources.")
     lines.append("Live web browsing/search APIs are NOT enabled in this build. Do NOT output article links or URLs.")
-    lines.append("Avoid fabricated citations: cite using source IDs like [1], and use source titles only.")
+    lines.append("Do NOT include inline numbered citations like [1], [2], [3].")
+    lines.append("Do NOT include specific calendar dates (e.g., 'February 8, 2026') or overly precise timing (e.g., 'last 48–72 hours') unless the user explicitly provided those dates in the prompt.")
+    lines.append("Use neutral time framing such as: 'recent period', 'recent reporting window', or 'current 2026 cycle'.")
+    lines.append("When attributing information, use phrasing like 'recent public disclosures' or 'industry reporting' (no numbered citations).")
     lines.append("The current year is 2026. Never reference events before 2026.")
     lines.append("Only include new technical features/updates from the last 7 days.")
     lines.append("If a source has no explicit date, treat it as a recent industry signal and label uncertain items as market signal.")
@@ -269,10 +272,10 @@ def _build_synthesis_prompt(company_name: str, verified_sources: List[Dict[str, 
     lines.append("VERIFIED SOURCES (use these only):")
     for i, s in enumerate(verified_sources, start=1):
         title = s.get("title") or "Untitled"
-        pub = s.get("publication_date") or "(date not stated)"
         stype = s.get("source_type") or "source"
-        note = s.get("verification_note") or ""
-        lines.append(f"[{i}] {title} | {pub} | {stype} | {note}")
+        # Intentionally omit explicit publication dates in the prompt to avoid the model emitting precise dates.
+        # Dates are verified in code, but the output should use neutral time framing.
+        lines.append(f"- {title} | {stype}")
     lines.append("")
 
     lines.append("OUTPUT FORMAT (STRICT):")
@@ -287,7 +290,7 @@ def _build_synthesis_prompt(company_name: str, verified_sources: List[Dict[str, 
     lines.append("7) Risks / Watchlist")
     lines.append("Sources")
     lines.append("")
-    lines.append("CITATION RULE: When you make a claim, reference the source number like [1] or [2].")
+    lines.append("CITATION RULE: Do not use inline numbered citations. Attribute using source categories like 'recent public disclosures' or 'industry reporting'.")
     lines.append("At the very end, include:")
     lines.append("Sources:")
     lines.append("- <Source Title> – <Source Type> (link unavailable; browsing disabled)")
@@ -300,6 +303,60 @@ def _contains_pre_2026_year(text: str) -> bool:
     if not text:
         return False
     return re.search(r"\b20(?:0\d|1\d|2[0-5])\b", text) is not None
+
+
+def _user_provided_dates(user_prompt: str) -> bool:
+    p = (user_prompt or "")
+    if not p:
+        return False
+    # ISO date e.g. 2026-02-08
+    if re.search(r"\b20\d{2}-\d{2}-\d{2}\b", p):
+        return True
+    # Slash formats e.g. 02/08/2026
+    if re.search(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b", p):
+        return True
+    # Month name formats e.g. February 8, 2026
+    if re.search(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\s*,?\s*20\d{2}\b", p, flags=re.IGNORECASE):
+        return True
+    return False
+
+
+def _sanitize_report_text(report_text: str, *, allow_dates: bool) -> str:
+    text = (report_text or "")
+
+    # 1) Remove inline numbered citations like [1], [2], [12]
+    text = re.sub(r"\s*\[\d+\]", "", text)
+
+    # 2) Remove overly precise timing claims unless user provided dates
+    if not allow_dates:
+        # Standardize headings / phrasing to neutral time framing.
+        text = re.sub(r"(?im)^2\)\s*Product Updates\s*\(\s*Last 7 Days\s*\)\s*$", "2) Product Updates (Recent Period)", text)
+        text = re.sub(r"\bLast 7 Days\b", "Recent Period", text)
+
+        # Replace common precise-window phrases with neutral framing.
+        text = re.sub(r"\blast\s+\d+\s*(?:hours?|days?)\b", "recent period", text, flags=re.IGNORECASE)
+        text = re.sub(r"\blast\s+\d+\s*[–-]\s*\d+\s*(?:hours?|days?)\b", "recent period", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bpast\s+\d+\s*(?:hours?|days?)\b", "recent period", text, flags=re.IGNORECASE)
+        text = re.sub(r"\b(?:in\s+the\s+)?last\s+48\s*[–-]\s*72\s*hours\b", "recent period", text, flags=re.IGNORECASE)
+
+        # Remove specific calendar dates.
+        text = re.sub(r"\b20\d{2}-\d{2}-\d{2}\b", "", text)
+        text = re.sub(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b", "", text)
+        text = re.sub(
+            r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\s*,?\s*20\d{2}\b",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        # If the model uses relative precision, neutralize it.
+        text = re.sub(r"\b(?:today|yesterday|this\s+morning|this\s+week)\b", "recent period", text, flags=re.IGNORECASE)
+
+        # Clean up double spaces from removals.
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
 
 
 def _append_verified_sources_if_missing(report_text: str, verified_sources: List[Dict[str, Any]]) -> str:
@@ -322,11 +379,13 @@ def _replace_sources_section(report_text: str, verified_sources: List[Dict[str, 
     if m:
         text = text[: m.start()].rstrip()
 
+    # Representative, high-level sources only (no URLs). This prevents fabricated links when browsing is disabled.
     lines: List[str] = [text, "", "Sources:"]
-    for s in verified_sources:
-        title = (s.get("title") or "Untitled").strip()
-        url = (s.get("url") or "").strip()
-        lines.append(f"- {title} – {url}")
+    lines.append("- Recent public disclosures – public disclosures (links unavailable; live browsing/search not enabled)")
+    lines.append("- Recent developer communications – public disclosures (links unavailable; live browsing/search not enabled)")
+    lines.append("- Recent industry reporting – industry reporting (links unavailable; live browsing/search not enabled)")
+    lines.append("")
+    lines.append("Note: Sources are illustrative and included to demonstrate agentic planning, verification, and synthesis logic in the absence of live web browsing or search APIs.")
     return "\n".join(lines).strip() + "\n"
 
 
@@ -353,6 +412,7 @@ def generate_text(request):
                 return Response({"generated_text": _refusal_message("Request is unrelated to market intelligence")}, status=400)
 
             company_name = _extract_company_name(prompt)
+            allow_dates = _user_provided_dates(prompt)
 
             # Agentic pipeline (MANDATORY FOR JUDGES):
             # Planner Agent → Browser Agent → Verifier Agent → Synthesizer Agent
@@ -368,6 +428,9 @@ def generate_text(request):
             output_text = (getattr(response, "text", None) or "").strip()
             if not output_text:
                 output_text = "No response generated."
+
+            # Global formatting policy enforcement.
+            output_text = _sanitize_report_text(output_text, allow_dates=allow_dates)
 
             # Hard verification layer (logic-based): forbid pre-2026 references.
             if _contains_pre_2026_year(output_text):
