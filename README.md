@@ -1,104 +1,225 @@
 # Market Scout Agent
 
-**Market Scout Agent** is a professional market, product, and competitor intelligence application powered by **Google's Gemini models**, with a **Django** backend and a **Streamlit** frontend.
+Market Scout Agent is a market, product, and competitor intelligence application built for the **Market Scout Agent** use case (Virtusa Jatayu Season 5). It delivers structured, analyst-style market intelligence using a Streamlit frontend, a Django REST Framework backend, and Google Gemini multimodal models (text, image, PDF).
 
-## Features
-- **Market Intelligence Chat**: Text-based market and competitor analysis.
-- **Visual Competitor Analysis**: Upload images for visual competitor and product insights.
-- **Analyze Market Reports**: Upload PDFs and get structured analysis; uses `text-embedding-004` for embeddings and FAISS for vector search.
+## Key Features
 
----
+### 1) Market Intelligence Chat
+
+- Text-based market and competitor intelligence
+- Structured, analyst-style reporting (not a casual chatbot)
+- Intended for strategy, product, and leadership workflows
+
+### 2) Visual Competitor Analysis (Image)
+
+- Upload images:
+  - `JPG` / `JPEG`
+  - `PNG`
+  - `WEBP`
+- Extracts signals from product screenshots, branding, UI/UX, and positioning cues
+- Uses Gemini multimodal reasoning for image understanding
+
+### 3) Analyze Market Reports (PDF)
+
+- Upload PDF market and research reports
+- Generates structured analysis and answers grounded in document context
+- Uses embeddings + FAISS similarity search for retrieval and context injection
+
+## Architecture
+
+- **Streamlit frontend** collects prompts and uploads, then calls backend REST endpoints.
+- **Django REST Framework backend** exposes endpoints for:
+  - Text chat intelligence
+  - Image-based competitor analysis
+  - PDF-based report analysis
+- **Google Gemini** provides multimodal reasoning and report generation.
+- **FAISS** supports retrieval for PDF context selection.
 
 ## Project Structure
-The project is divided into two main parts:
-1.  **Backend (`Gemini-Bot-backend`)**: A Django REST Framework API that handles the logic for text, image, and PDF processing.
-2.  **Frontend (`Gemini-Bot-main`)**: A Streamlit application that provides a user-friendly interface to interact with the backend APIs.
 
----
+```text
+Bot_Ai/
+├── Gemini-Bot-backend/
+│   ├── manage.py
+│   ├── requirements.txt
+│   ├── APIs/
+│   │   ├── settings.py
+│   │   ├── urls.py
+│   │   └── gemini_client.py
+│   ├── text_bot/
+│   │   ├── urls.py
+│   │   └── views.py
+│   ├── image_bot/
+│   │   ├── urls.py
+│   │   └── views.py
+│   └── pdf_chat/
+│       ├── urls.py
+│       └── views.py
+│
+└── Gemini-Bot-main/
+    ├── app.py
+    ├── requirements.txt
+    └── .env
+```
+
+## Prerequisites
+
+- Python 3.10+
+- A Google Gemini API key (Google AI Studio)
+
+## Environment Variables
+
+### Backend (`Gemini-Bot-backend/.env`)
+
+Required:
+
+```env
+GEMINI_API_KEY=your_api_key_here
+```
+
+Optional (if supported by your deployment/config):
+
+```env
+# GEMINI_TEXT_MODEL=gemini-3-flash-preview
+# GEMINI_VISION_MODEL=gemini-3-flash-preview
+```
+
+### Frontend (`Gemini-Bot-main/.env`)
+
+Required:
+
+```env
+API_URL=http://localhost:8001
+```
 
 ## Setup Instructions
 
-### Prerequisites
-- Python 3.10 or higher (Tested with Python 3.13)
-- A Google Gemini API Key (Get it from [Google AI Studio](https://aistudio.google.com/))
+### 1) Backend Setup (Django REST)
 
-### 1. Backend Setup
-1.  Navigate to the backend directory:
-    ```bash
-    cd Gemini-Bot-backend
-    ```
+Create and activate a virtual environment and install dependencies:
 
-2.  Create and activate a virtual environment:
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-    ```
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r Gemini-Bot-backend/requirements.txt
+```
 
-3.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
+Create `Gemini-Bot-backend/.env` and set `GEMINI_API_KEY`.
 
-4.  Configure Environment Variables:
-    - Create a `.env` file in the `Gemini-Bot-backend` directory.
-    - Add your Gemini API Key:
-      ```env
-      GEMINI_API_KEY=your_actual_api_key_here
-      ```
-    - (Optional) Configure model names if needed (defaults are set in code):
-      ```env
-      GEMINI_VISION_MODEL=models/gemini-2.5-flash
-      GEMINI_TEXT_MODEL=models/gemini-2.5-flash
-      ```
+Run migrations:
 
-5.  Run Migrations and Start Server:
-    ```bash
-    python manage.py migrate
-    python manage.py runserver 8001
-    ```
-    The backend will run at `http://localhost:8001`.
+```bash
+python3 Gemini-Bot-backend/manage.py migrate
+```
 
-### 2. Frontend Setup
-1.  Open a new terminal and navigate to the frontend directory:
-    ```bash
-    cd Gemini-Bot-main
-    ```
+Run the backend on port **8001**:
 
-2.  Create and activate a virtual environment:
-    ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-    ```
+```bash
+python3 Gemini-Bot-backend/manage.py runserver 0.0.0.0:8001
+```
 
-3.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
+### 2) Frontend Setup (Streamlit)
 
-4.  Run the Streamlit App:
-    ```bash
-    streamlit run app.py
-    ```
-    The app will open in your browser (usually at `http://localhost:8501`).
+Create and activate a virtual environment and install dependencies:
 
----
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r Gemini-Bot-main/requirements.txt
+```
 
-## Usage Guide
+Create `Gemini-Bot-main/.env` and set `API_URL=http://localhost:8001`.
 
-1.  **Market Intelligence Chat**: Run text-based market and competitor intelligence queries.
-2.  **Visual Competitor Analysis**: Upload an image (JPG, PNG, WEBP) and request analysis.
-3.  **Analyze Market Reports**: Upload a PDF report; then ask questions or request a summary of the content.
+Run Streamlit on port **8501**:
+
+```bash
+streamlit run Gemini-Bot-main/app.py --server.port 8501
+```
+
+Open:
+
+```text
+http://localhost:8501
+```
+
+## Usage
+
+### Market Intelligence Chat
+
+1. Open the Streamlit app.
+2. Select **Market Intelligence Chat**.
+3. Enter a company/product name or intelligence query.
+4. Submit to receive a structured market intelligence report.
+
+### Visual Competitor Analysis (Image)
+
+1. Select **Visual Competitor Analysis**.
+2. Upload an image (`jpg`, `jpeg`, `png`, `webp`).
+3. Optionally add a prompt (e.g., positioning, UI, messaging).
+4. Submit to receive structured insights derived from the image.
+
+### Analyze Market Reports (PDF)
+
+1. Select **Analyze Market Reports**.
+2. Upload a `.pdf` report.
+3. Provide an analysis request.
+4. Submit to receive a structured analysis grounded in the document.
+
+## API Endpoints (Backend)
+
+- `POST /chat/`
+- `POST /image/`
+- `POST /pdf/`
+
+All endpoints return JSON:
+
+```json
+{ "generated_text": "..." }
+```
 
 ## Troubleshooting
 
--   **500 Errors / Quota Exceeded**: If you encounter errors related to quotas (especially in Analyze Market Reports), the API key may have hit the rate limit. Wait a minute and try again.
--   **Model Not Found**: Ensure you are using supported models. This project uses `gemini-2.5-flash` and `text-embedding-004`.
+### API quota / rate limit
 
-## Technologies Used
--   **Python**
--   **Django & Django REST Framework**
--   **Streamlit**
--   **Google Gemini API** (`google-genai`, `langchain-google-genai`)
--   **LangChain**
--   **FAISS** (Vector Store)
--   **PDFPlumber** (PDF Text Extraction)
+Symptoms:
+
+- HTTP `429`
+- Errors containing: `quota`, `rate limit`, `resource exhausted`
+
+Actions:
+
+- Wait and retry
+- Verify your API key quota in Google AI Studio
+
+### Model not found / access issues
+
+Symptoms:
+
+- HTTP `400`/`500` mentioning model availability
+
+Actions:
+
+- Confirm the configured model is accessible to your API key
+
+### Image upload rejected
+
+Symptoms:
+
+- HTTP `400` “Unsupported image type”
+
+Actions:
+
+- Ensure the upload is `jpg/jpeg/png/webp`
+- Ensure multipart upload includes filename + bytes + correct MIME type
+- Keep uploads within backend size limits
+
+## Tech Stack
+
+- Python
+- Django
+- Django REST Framework
+- Streamlit
+- Google Gemini API
+- LangChain
+- FAISS
+- PDFPlumber
