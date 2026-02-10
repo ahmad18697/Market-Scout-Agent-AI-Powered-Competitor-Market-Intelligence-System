@@ -1,10 +1,11 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 import logging
+import mimetypes
 
 from google.genai import types
 
-from APIs.gemini_client import MODEL_NAME, client
+from APIs.gemini_client import generate_content
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,12 @@ def image_bot(request):
         return Response({"generated_text": "No image uploaded"}, status=400)
 
     # Validate MIME type from uploaded file
-    content_type = getattr(image_file, "content_type", None) or ""
+    content_type = (getattr(image_file, "content_type", None) or "").strip().lower()
+    if not content_type or content_type == "application/octet-stream":
+        guessed, _ = mimetypes.guess_type(getattr(image_file, "name", "") or "")
+        content_type = (guessed or "").strip().lower()
+    if content_type == "image/jpg":
+        content_type = "image/jpeg"
     if content_type not in ALLOWED_IMAGE_MIME_TYPES:
         return Response(
             {"generated_text": "Unsupported image type. Allowed: PNG, JPG, JPEG, WEBP."},
@@ -147,10 +153,7 @@ def image_bot(request):
             )
 
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=content_type)
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[MARKET_SCOUT_SYSTEM_PROMPT, user_prompt, image_part],
-        )
+        response = generate_content([MARKET_SCOUT_SYSTEM_PROMPT, user_prompt, image_part])
 
         text = (getattr(response, "text", None) or "").strip()
         if not text:
@@ -173,6 +176,12 @@ def image_bot(request):
             return Response(
                 {"generated_text": "Rate limit exceeded. Please try again later."},
                 status=429,
+            )
+        if any(t in str(e).lower() for t in ["unavailable", "timeout", "tls", "handshake", "connection"]):
+            logger.exception("Transient Gemini error in image_bot: %s", e)
+            return Response(
+                {"generated_text": "Service temporarily unavailable. Please try again later."},
+                status=503,
             )
         logger.exception("Error in image_bot: %s", e)
         return Response(

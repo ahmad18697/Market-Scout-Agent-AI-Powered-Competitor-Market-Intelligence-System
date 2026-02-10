@@ -97,7 +97,11 @@ def image_analysis():
             with st.spinner("Thinking..."):
                 uploaded_image.seek(0)
                 files = {
-                    "image": uploaded_image.read()
+                    "image": (
+                        uploaded_image.name,
+                        uploaded_image.read(),
+                        uploaded_image.type,
+                    )
                 }
 
                 response = requests.post(

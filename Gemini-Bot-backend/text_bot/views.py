@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 import logging
 
-from APIs.gemini_client import MODEL_NAME, client
+from APIs.gemini_client import generate_content
 
 # -------------------------
 # Market Scout System Prompt (global, strict role + time lock)
@@ -90,10 +90,7 @@ def generate_text(request):
             if not prompt:
                 prompt = "Analyze recent technical and product updates for a major technology company from the last 7 days."
 
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[system_prompt, prompt],
-            )
+            response = generate_content([system_prompt, prompt])
 
             output_text = (getattr(response, "text", None) or "").strip()
             if not output_text:
@@ -104,5 +101,8 @@ def generate_text(request):
             logger.exception("ValueError in generate_text. session_id=%s", request.data.get('session_id'))
             return Response({"generated_text": str(e)}, status=500)
         except Exception as e:
+            if any(t in str(e).lower() for t in ["429", "rate limit", "quota", "unavailable", "timeout", "tls", "handshake", "connection"]):
+                logger.exception("Transient error in generate_text. session_id=%s", request.data.get('session_id'))
+                return Response({"generated_text": "Service temporarily unavailable. Please try again later."}, status=503)
             logger.exception("Error in generate_text. session_id=%s", request.data.get('session_id'))
             return Response({"generated_text": "Something went wrong. Please try again later."}, status=500)

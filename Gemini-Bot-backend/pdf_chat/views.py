@@ -5,7 +5,7 @@ import logging
 
 from google.genai import types
 
-from APIs.gemini_client import MODEL_NAME, client
+from APIs.gemini_client import generate_content
 
 
 # ================================
@@ -102,10 +102,7 @@ def pdf_chat(request):
 
     try:
         pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[MARKET_SCOUT_SYSTEM_PROMPT, prompt, pdf_part],
-        )
+        response = generate_content([MARKET_SCOUT_SYSTEM_PROMPT, prompt, pdf_part])
 
         output_text = (getattr(response, "text", None) or "").strip()
         if not output_text:
@@ -118,6 +115,12 @@ def pdf_chat(request):
             return Response(
                 {"generated_text": "Rate limit exceeded. Please try again later."},
                 status=429,
+            )
+        if any(t in str(e).lower() for t in ["unavailable", "timeout", "tls", "handshake", "connection"]):
+            logger.exception("Transient Gemini error")
+            return Response(
+                {"generated_text": "Service temporarily unavailable. Please try again later."},
+                status=503,
             )
         logger.exception("Gemini error")
         return Response(
