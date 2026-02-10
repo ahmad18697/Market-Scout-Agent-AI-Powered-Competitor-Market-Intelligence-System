@@ -1,126 +1,15 @@
-# from rest_framework.decorators import api_view
-# import google.generativeai as genai
-# from rest_framework.response import Response
-# from decouple import config
-# import os
-# import logging
-
-# MARKET_SCOUT_SYSTEM_PROMPT = """---
-# You are a Market Scout Agent.
-
-# Your role is to provide structured market and competitor intelligence
-# for business and product teams.
-
-# You are not a general-purpose chatbot.
-# You must not ask follow-up questions or offer options.
-
-# Analyze companies and return recent technical and product updates
-# from the last 7 days in a clear, structured format.
-# ---
-# """
-
-# API_KEY = config("GEMINI_API_KEY", default=None)
-# # API_KEY = os.environ["GEMINI_API_KEY"]
-
-# # Model Initialization
-# _vision_model = None
-
-
-# def _get_api_key():
-#     return config("GEMINI_API_KEY", default=None)
-
-
-# logger = logging.getLogger(__name__)
-
-# def _get_vision_model_name():
-#     return config("GEMINI_VISION_MODEL", default="models/gemini-2.5-flash")
-
-# def _get_vision_model():
-#     global _vision_model
-#     if _vision_model is None:
-#         api_key = _get_api_key()
-#         if not api_key:
-#             raise ValueError("GEMINI_API_KEY not configured")
-#         genai.configure(api_key=api_key)
-#         _vision_model = genai.GenerativeModel(
-#             _get_vision_model_name(),
-#             system_instruction=MARKET_SCOUT_SYSTEM_PROMPT,
-#         )
-#     return _vision_model
-
-# @api_view(['POST'])
-# def image_bot(request):
-#     if request.method == 'POST':
-#         try:
-#             session_id = request.data.get('session_id')
-#             prompt = request.data.get('prompt')
-#             image = request.FILES.get('image')
-
-#             if not prompt:
-#                 prompt = "Analyze recent technical and product updates for a major technology company from the last 7 days."
-
-#             if not image:
-#                 return Response({"generated_text": "No image uploaded"}, status=400)
-
-#             allowed_mime_types = {"image/png", "image/jpeg", "image/jpg"}
-#             content_type = getattr(image, "content_type", None) or ""
-#             if content_type not in allowed_mime_types:
-#                 return Response({"generated_text": "Unsupported image type. Allowed: PNG, JPG, JPEG."}, status=400)
-
-#             max_bytes = 4 * 1024 * 1024
-#             size = getattr(image, "size", None)
-#             if isinstance(size, int) and size > max_bytes:
-#                 return Response({"generated_text": "Image too large. Max allowed size is 4MB."}, status=400)
-
-#             image_bytes = image.read()
-#             if len(image_bytes) > max_bytes:
-#                 return Response({"generated_text": "Image too large. Max allowed size is 4MB."}, status=400)
-
-#             model = _get_vision_model()
-            
-#             content = [
-#                 prompt,
-#                 {
-#                     "inline_data": {
-#                         "mime_type": content_type,
-#                         "data": image_bytes,
-#                     }
-#                 },
-#             ]
-            
-#             response = model.generate_content(content)
-#             # Check if response was blocked or invalid
-#             if not response.parts:
-#                 logger.warning("Image analysis response blocked/empty. session_id=%s feedback=%s", session_id, getattr(response, "prompt_feedback", None))
-#                 return Response({'generated_text': "The response was blocked by safety filters."}, status=200)
-                
-#             text = response.text
-
-#             return Response({'generated_text': text})
-#         except Exception as e:
-#             logger.exception("Error in image_bot. session_id=%s", request.data.get('session_id'))
-#             return Response({"generated_text": "An error occurred while processing the image."}, status=500)
-
-
-
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from decouple import config
-import warnings
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
-    import google.generativeai as genai
 import logging
 
-try:
-    from google.api_core.exceptions import ResourceExhausted
-except ImportError:
-    ResourceExhausted = None
+from google.genai import types
+
+from APIs.gemini_client import MODEL_NAME, client
 
 logger = logging.getLogger(__name__)
 
 # Allowed MIME types for multipart uploads (Django request.FILES)
-ALLOWED_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg"}
+ALLOWED_IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
 MAX_IMAGE_BYTES = 4 * 1024 * 1024  # 4MB
 
 # -------------------------
@@ -201,35 +90,8 @@ DEFAULT_USER_PROMPT = (
     "technology, or competitor-related insights visible."
 )
 
-# -------------------------
-# Gemini Vision Model (stable, free-tier friendly)
-# -------------------------
-_vision_model = None
-
-
-def _get_vision_model_name():
-    # Configurable; default is widely supported and works on free-tier
-    return config("GEMINI_VISION_MODEL", default="models/gemini-flash-latest")
-
-
-def _get_vision_model():
-    global _vision_model
-    if _vision_model is None:
-        api_key = config("GEMINI_API_KEY", default=None)
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY not configured")
-        genai.configure(api_key=api_key)
-        _vision_model = genai.GenerativeModel(
-            model_name=_get_vision_model_name(),
-            system_instruction=MARKET_SCOUT_SYSTEM_PROMPT,
-        )
-    return _vision_model
-
-
 def _is_rate_limit_error(exc):
     """Detect quota/rate-limit (429) from Gemini/API layer."""
-    if ResourceExhausted is not None and isinstance(exc, ResourceExhausted):
-        return True
     msg = (getattr(exc, "message", None) or str(exc)).lower()
     return (
         "429" in str(getattr(exc, "code", None) or "")
@@ -253,7 +115,7 @@ def image_bot(request):
     content_type = getattr(image_file, "content_type", None) or ""
     if content_type not in ALLOWED_IMAGE_MIME_TYPES:
         return Response(
-            {"generated_text": "Unsupported image type. Allowed: PNG, JPG, JPEG."},
+            {"generated_text": "Unsupported image type. Allowed: PNG, JPG, JPEG, WEBP."},
             status=400,
         )
 
@@ -284,30 +146,11 @@ def image_bot(request):
                 status=400,
             )
 
-        model = _get_vision_model()
-        # Gemini requires inline_data for raw bytes + mime_type.
-        # Include BOTH prompt text and image in the SAME request.
-        content = [
-            user_prompt,
-            {
-                "inline_data": {
-                    "mime_type": content_type,
-                    "data": image_bytes,
-                }
-            },
-        ]
-        response = model.generate_content(content)
-
-        # Blocked or empty response: return 200 with message (no 500)
-        if not getattr(response, "parts", None) or not response.parts:
-            logger.warning(
-                "Image analysis response blocked or empty. prompt_feedback=%s",
-                getattr(response, "prompt_feedback", None),
-            )
-            return Response(
-                {"generated_text": "The response was blocked by safety filters."},
-                status=200,
-            )
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type=content_type)
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[MARKET_SCOUT_SYSTEM_PROMPT, user_prompt, image_part],
+        )
 
         text = (getattr(response, "text", None) or "").strip()
         if not text:
@@ -319,11 +162,6 @@ def image_bot(request):
         return Response({"generated_text": text}, status=200)
 
     except ValueError as e:
-        if "GEMINI_API_KEY" in str(e):
-            return Response(
-                {"generated_text": "GEMINI_API_KEY not configured"},
-                status=500,
-            )
         logger.exception("ValueError in image_bot: %s", e)
         return Response(
             {"generated_text": "Something went wrong while processing the image."},

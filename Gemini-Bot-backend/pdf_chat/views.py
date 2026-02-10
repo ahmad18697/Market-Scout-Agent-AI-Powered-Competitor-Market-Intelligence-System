@@ -1,19 +1,11 @@
 from decouple import config
-import warnings
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
-    import google.generativeai as genai
-
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-import pdfplumber
-import io
 import logging
 
-try:
-    from google.api_core.exceptions import ResourceExhausted
-except ImportError:
-    ResourceExhausted = None
+from google.genai import types
+
+from APIs.gemini_client import MODEL_NAME, client
 
 
 # ================================
@@ -61,13 +53,7 @@ def _get_api_key():
     return config("GEMINI_API_KEY", default=None)
 
 
-def _get_model_name():
-    return config("GEMINI_TEXT_MODEL", default="models/gemini-1.5-flash")
-
-
 def _is_rate_limit_error(exc):
-    if ResourceExhausted and isinstance(exc, ResourceExhausted):
-        return True
     msg = str(exc).lower()
     return "429" in msg or "quota" in msg or "rate limit" in msg
 
@@ -114,78 +100,27 @@ def pdf_chat(request):
             status=400
         )
 
-    # ---- EXTRACT TEXT ----
-    extracted_pages = []
     try:
-        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text() if page else None
-                if text:
-                    extracted_pages.append(text)
-    except Exception:
-        logger.exception("PDF parsing failed")
-        return Response(
-            {"generated_text": "Failed to parse PDF"},
-            status=400
+        pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[MARKET_SCOUT_SYSTEM_PROMPT, prompt, pdf_part],
         )
 
-    extracted_text = "\n\n".join(extracted_pages).strip()
-    if not extracted_text:
-        return Response(
-            {"generated_text": "Could not extract text from PDF"},
-            status=400
-        )
-
-    # ---- LIMIT CONTEXT SIZE (CRITICAL) ----
-    MAX_CHARS = 20_000
-    if len(extracted_text) > MAX_CHARS:
-        extracted_text = extracted_text[:MAX_CHARS] + "\n\n[TRUNCATED]"
-
-    # ---- GEMINI CALL ----
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(_get_model_name())
-
-        user_message = f"""
-{MARKET_SCOUT_SYSTEM_PROMPT}
-
-User Request:
-{prompt}
-
-Extracted PDF Text:
-{extracted_text}
-"""
-
-        response = model.generate_content(user_message)
-
-        # ---- ROBUST RESPONSE PARSING ----
-        output_text = ""
-
-        if hasattr(response, "text") and response.text:
-            output_text = response.text.strip()
-        elif hasattr(response, "candidates") and response.candidates:
-            try:
-                output_text = response.candidates[0].content.parts[0].text.strip()
-            except Exception:
-                pass
-
+        output_text = (getattr(response, "text", None) or "").strip()
         if not output_text:
             output_text = "No response generated from the PDF."
 
-        return Response(
-            {"generated_text": output_text},
-            status=200
-        )
+        return Response({"generated_text": output_text}, status=200)
 
     except Exception as e:
         if _is_rate_limit_error(e):
             return Response(
                 {"generated_text": "Rate limit exceeded. Please try again later."},
-                status=429
+                status=429,
             )
-
         logger.exception("Gemini error")
         return Response(
             {"generated_text": "An error occurred while processing the PDF."},
-            status=500
+            status=500,
         )
